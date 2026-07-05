@@ -17,7 +17,7 @@ func getConfigFilePath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error finding home directory of signed in user: %w", err)
 	}
-	absoluteConfigPath := filepath.Join(homeDirectory, "gatorconfig.json")
+	absoluteConfigPath := filepath.Join(homeDirectory, ".gatorconfig.json")
 	return absoluteConfigPath, nil
 }
 
