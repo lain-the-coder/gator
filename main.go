@@ -1,15 +1,23 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
+	"database/sql"
+
+	"github.com/google/uuid"
 	"github.com/lain-the-coder/gator/internal/config"
+	"github.com/lain-the-coder/gator/internal/database"
+	_ "github.com/lib/pq"
 )
 
 type state struct {
 	cfg *config.Config
+	db  *database.Queries
 }
 
 type command struct {
@@ -41,7 +49,37 @@ func handlerLogin(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
 		return fmt.Errorf("error - username is required to login")
 	}
-	err := s.cfg.SetUser(cmd.args[0])
+	_, err := s.db.GetUser(context.Background(), cmd.args[0])
+	if err != nil {
+		// If the name is missing, Postgres returns a sql.ErrNoRows error
+		return fmt.Errorf("user does not exist: %w", err)
+	}
+	err = s.cfg.SetUser(cmd.args[0])
+	if err != nil {
+		return fmt.Errorf("error setting username: %w", err)
+	}
+	fmt.Println("Current username is set and user has logged in successfully!")
+	return nil
+}
+
+func handlerRegister(s *state, cmd command) error {
+	if len(cmd.args) == 0 {
+		return fmt.Errorf("usage: %s <name>", cmd.name)
+	}
+	username := cmd.args[0]
+	user, err := s.db.CreateUser(context.Background(), database.CreateUserParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Name:      username,
+	})
+	if err != nil {
+		// A database error happened (most likely unique constraint violation)
+		fmt.Printf("error creating user: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("User created successfully!")
+	err = s.cfg.SetUser(user.Name)
 	if err != nil {
 		return fmt.Errorf("error setting username: %w", err)
 	}
@@ -54,13 +92,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("error reading config file: %v", err)
 	}
+	rawDB, err := sql.Open("postgres", cfg.DbURL)
+	if err != nil {
+		log.Fatalf("error opening database: %v", err)
+	}
+	db := database.New(rawDB)
 	s := state{
 		cfg: &cfg,
+		db:  db,
 	}
 	cmds := commands{
 		registeredCommands: make(map[string]func(*state, command) error),
 	}
 	cmds.register("login", handlerLogin)
+	cmds.register("register", handlerRegister)
 	if len(os.Args) < 2 {
 		log.Fatalln("error - too few arguments")
 	}
