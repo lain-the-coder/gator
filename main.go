@@ -62,6 +62,15 @@ func handlerLogin(s *state, cmd command) error {
 	return nil
 }
 
+func handlerReset(s *state, cmd command) error {
+	err := s.db.ResetUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("error deletion did not complete successfully: %w", err)
+	}
+	fmt.Println("All rows have been deleted successfully and table has been reset!")
+	return nil
+}
+
 func handlerRegister(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
 		return fmt.Errorf("usage: %s <name>", cmd.name)
@@ -106,6 +115,7 @@ func main() {
 	}
 	cmds.register("login", handlerLogin)
 	cmds.register("register", handlerRegister)
+	cmds.register("reset", handlerReset)
 	if len(os.Args) < 2 {
 		log.Fatalln("error - too few arguments")
 	}
