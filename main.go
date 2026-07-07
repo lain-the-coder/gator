@@ -111,6 +111,18 @@ func handleGetUsers(s *state, cmd command) error {
 	return nil
 }
 
+func handlerAgg(s *state, cmd command) error {
+	if len(cmd.args) != 0 {
+		return fmt.Errorf("this command takes no arguments")
+	}
+	rssfeed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		return fmt.Errorf("error completing successful fetch feed request: %w", err)
+	}
+	fmt.Printf("%+v\n", rssfeed)
+	return nil
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -132,6 +144,7 @@ func main() {
 	cmds.register("register", handlerRegister)
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handleGetUsers)
+	cmds.register("agg", handlerAgg)
 	if len(os.Args) < 2 {
 		log.Fatalln("error - too few arguments")
 	}
