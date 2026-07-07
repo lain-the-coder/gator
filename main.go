@@ -218,6 +218,25 @@ func handlerFollowedFeeds(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+func handlerUnfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.args) != 1 {
+		return fmt.Errorf("usage: gator unfollow <feed_url>")
+	}
+	feed, err := s.db.GetFeedByURL(context.Background(), cmd.args[0])
+	if err != nil {
+		return fmt.Errorf("could not find a feed matching url: %w", err)
+	}
+	err = s.db.DeleteFeedFollow(context.Background(), database.DeleteFeedFollowParams{
+		UserID: user.ID,
+		FeedID: feed.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to remove feed follow record: %w", err)
+	}
+	fmt.Printf("Sucessfully unfollowed feed: %s\n", feed.Name)
+	return nil
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -244,6 +263,7 @@ func main() {
 	cmds.register("feeds", handlerListFeeds)
 	cmds.register("follow", middlewareLoggedIn(handlerFollowFeeds))
 	cmds.register("following", middlewareLoggedIn(handlerFollowedFeeds))
+	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
 	if len(os.Args) < 2 {
 		log.Fatalln("error - too few arguments")
 	}
