@@ -96,7 +96,7 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
-func handleGetUsers(s *state, cmd command) error {
+func handlerGetUsers(s *state, cmd command) error {
 	users, err := s.db.GetUsers(context.Background())
 	if err != nil {
 		return fmt.Errorf("error completing select all rows command: %w", err)
@@ -123,6 +123,30 @@ func handlerAgg(s *state, cmd command) error {
 	return nil
 }
 
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.args) != 2 {
+		return fmt.Errorf("this command needs two arguments and its usage is as follows: gator addfeed <name> <url>")
+	}
+	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
+	if err != nil {
+		return fmt.Errorf("user does not exist: %w", err)
+	}
+	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Name:      cmd.args[0],
+		Url:       cmd.args[1],
+		UserID:    user.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating feed: %w", err)
+	}
+	fmt.Println("Feed created successfully!")
+	fmt.Printf("Feed Name: %s; Feed URL: %s; Feed Owner: %s\n", feed.Name, feed.Url, user.Name)
+	return nil
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -143,8 +167,9 @@ func main() {
 	cmds.register("login", handlerLogin)
 	cmds.register("register", handlerRegister)
 	cmds.register("reset", handlerReset)
-	cmds.register("users", handleGetUsers)
+	cmds.register("users", handlerGetUsers)
 	cmds.register("agg", handlerAgg)
+	cmds.register("addfeed", handlerAddFeed)
 	if len(os.Args) < 2 {
 		log.Fatalln("error - too few arguments")
 	}
