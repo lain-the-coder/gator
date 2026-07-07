@@ -33,6 +33,16 @@ func (c *commands) register(name string, f func(*state, command) error) {
 	c.registeredCommands[name] = f
 }
 
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
+		if err != nil {
+			return fmt.Errorf("user does not exist: %w", err)
+		}
+		return handler(s, cmd, user)
+	}
+}
+
 func (c *commands) run(s *state, cmd command) error {
 	f, exists := c.registeredCommands[cmd.name]
 	if !exists {
@@ -123,13 +133,9 @@ func handlerAgg(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {
+func handlerAddFeed(s *state, cmd command, user database.User) error {
 	if len(cmd.args) != 2 {
 		return fmt.Errorf("this command needs two arguments and its usage is as follows: gator addfeed <name> <url>")
-	}
-	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
-	if err != nil {
-		return fmt.Errorf("user does not exist: %w", err)
 	}
 	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
 		ID:        uuid.New(),
@@ -174,13 +180,9 @@ func handlerListFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollowFeeds(s *state, cmd command) error {
+func handlerFollowFeeds(s *state, cmd command, user database.User) error {
 	if len(cmd.args) != 1 {
 		return fmt.Errorf("this command only needs one argument and it's usage is as follows: gator follow <url>")
-	}
-	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
-	if err != nil {
-		return fmt.Errorf("user does not exist: %w", err)
 	}
 	feed, err := s.db.GetFeedByURL(context.Background(), cmd.args[0])
 	if err != nil {
@@ -201,13 +203,9 @@ func handlerFollowFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollowedFeeds(s *state, cmd command) error {
+func handlerFollowedFeeds(s *state, cmd command, user database.User) error {
 	if len(cmd.args) != 0 {
 		return fmt.Errorf("this command does not need any arguments and it's usage is as follows: gator following")
-	}
-	user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUsername)
-	if err != nil {
-		return fmt.Errorf("user does not exist: %w", err)
 	}
 	feedsFollowing, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
@@ -242,10 +240,10 @@ func main() {
 	cmds.register("reset", handlerReset)
 	cmds.register("users", handlerGetUsers)
 	cmds.register("agg", handlerAgg)
-	cmds.register("addfeed", handlerAddFeed)
+	cmds.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	cmds.register("feeds", handlerListFeeds)
-	cmds.register("follow", handlerFollowFeeds)
-	cmds.register("following", handlerFollowedFeeds)
+	cmds.register("follow", middlewareLoggedIn(handlerFollowFeeds))
+	cmds.register("following", middlewareLoggedIn(handlerFollowedFeeds))
 	if len(os.Args) < 2 {
 		log.Fatalln("error - too few arguments")
 	}
