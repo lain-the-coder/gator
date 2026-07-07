@@ -147,6 +147,21 @@ func handlerAddFeed(s *state, cmd command) error {
 	return nil
 }
 
+func handlerListFeeds(s *state, cmd command) error {
+	if len(cmd.args) != 0 {
+		return fmt.Errorf("this command does not need any arguments and it's usage is as follows: gator feeds")
+	}
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return fmt.Errorf("error fetching all feeds available within db: %w", err)
+	}
+	fmt.Printf("List of %d feeds fetched successfully!\n", len(feeds))
+	for _, feed := range feeds {
+		fmt.Printf("Feed name: %s; Feed URL: %s; Username: %s\n", feed.FeedName, feed.Url, feed.UserName)
+	}
+	return nil
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -170,6 +185,7 @@ func main() {
 	cmds.register("users", handlerGetUsers)
 	cmds.register("agg", handlerAgg)
 	cmds.register("addfeed", handlerAddFeed)
+	cmds.register("feeds", handlerListFeeds)
 	if len(os.Args) < 2 {
 		log.Fatalln("error - too few arguments")
 	}
