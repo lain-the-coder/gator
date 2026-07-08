@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"database/sql"
@@ -64,7 +66,38 @@ func scrapeFeeds(s *state) {
 		return
 	}
 	for _, item := range rssfeed.Channel.Item {
-		fmt.Printf("Post Title: %s\n", item.Title)
+		description := sql.NullString{}
+		if item.Description != "" {
+			description.String = item.Description
+			description.Valid = true
+		}
+		// 2. Handle Published At (Parse diverse RSS date layouts)
+		publishedAt := sql.NullTime{}
+		// Try standard layouts common in RSS feeds (RFC1123Z or RFC1123)
+		if parsedTime, err := time.Parse(time.RFC1123Z, item.PubDate); err == nil {
+			publishedAt.Time = parsedTime
+			publishedAt.Valid = true
+		} else if parsedTime, err := time.Parse(time.RFC1123, item.PubDate); err == nil {
+			publishedAt.Time = parsedTime
+			publishedAt.Valid = true
+		}
+		_, err := s.db.CreatePost(context.Background(), database.CreatePostParams{
+			ID:          uuid.New(),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			Title:       item.Title,
+			Url:         item.Link,
+			Description: description,
+			PublishedAt: publishedAt,
+			FeedID:      feeds[0].ID,
+		})
+		if err != nil {
+			// Catch duplicate key errors natively without stopping the daemon loop
+			if strings.Contains(err.Error(), "unique constraint") {
+				continue
+			}
+			fmt.Printf("failed to save post %q: %v\n", item.Title, err)
+		}
 	}
 }
 
@@ -268,6 +301,42 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	// 1. Parse optional limit parameter (defaults to 2)
+	limit := 2
+	if len(cmd.args) > 0 {
+		parsedLimit, err := strconv.Atoi(cmd.args[0])
+		if err != nil {
+			return fmt.Errorf("invalid limit parameter: %w", err)
+		}
+		limit = parsedLimit
+	}
+
+	// 2. Query the database directly using the user passed from middleware
+	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+		UserID: user.ID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		return fmt.Errorf("error retrieving posts: %w", err)
+	}
+
+	// 3. Print the posts cleanly in the terminal layout
+	fmt.Printf("Found %d posts for user %s:\n", len(posts), user.Name)
+	for _, post := range posts {
+		fmt.Printf("------------------------------------------\n")
+		fmt.Printf("Title:       %s\n", post.Title)
+		fmt.Printf("Link:        %s\n", post.Url)
+		if post.PublishedAt.Valid {
+			fmt.Printf("Published:   %s\n", post.PublishedAt.Time.Format(time.RFC1123))
+		}
+		if post.Description.Valid && post.Description.String != "" {
+			fmt.Printf("Description: %s\n", post.Description.String)
+		}
+	}
+	return nil
+}
+
 func main() {
 	cfg, err := config.Read()
 	if err != nil {
@@ -295,6 +364,7 @@ func main() {
 	cmds.register("follow", middlewareLoggedIn(handlerFollowFeeds))
 	cmds.register("following", middlewareLoggedIn(handlerFollowedFeeds))
 	cmds.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	cmds.register("browse", middlewareLoggedIn(handlerBrowse))
 	if len(os.Args) < 2 {
 		log.Fatalln("error - too few arguments")
 	}
