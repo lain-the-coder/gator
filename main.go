@@ -43,6 +43,31 @@ func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) 
 	}
 }
 
+func scrapeFeeds(s *state) {
+	feeds, err := s.db.GetNextFeedsToFetch(context.Background(), 1)
+	if err != nil {
+		fmt.Printf("error quering database: %s", err)
+		return
+	}
+	if len(feeds) == 0 {
+		fmt.Println("empty feeds table")
+		return
+	}
+	err = s.db.MarkFeedFetched(context.Background(), feeds[0].ID)
+	if err != nil {
+		fmt.Printf("error quering database: %s", err)
+		return
+	}
+	rssfeed, err := fetchFeed(context.Background(), feeds[0].Url)
+	if err != nil {
+		fmt.Printf("error fetching feed: %s", err)
+		return
+	}
+	for _, item := range rssfeed.Channel.Item {
+		fmt.Printf("Post Title: %s\n", item.Title)
+	}
+}
+
 func (c *commands) run(s *state, cmd command) error {
 	f, exists := c.registeredCommands[cmd.name]
 	if !exists {
@@ -122,15 +147,21 @@ func handlerGetUsers(s *state, cmd command) error {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	if len(cmd.args) != 0 {
-		return fmt.Errorf("this command takes no arguments")
+	if len(cmd.args) != 1 {
+		return fmt.Errorf("usage: %s <time_between_reqs>", cmd.name)
 	}
-	rssfeed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+
+	timeBetweenRequests, err := time.ParseDuration(cmd.args[0])
 	if err != nil {
-		return fmt.Errorf("error completing successful fetch feed request: %w", err)
+		return fmt.Errorf("invalid duration string: %w", err)
 	}
-	fmt.Printf("%+v\n", rssfeed)
-	return nil
+
+	fmt.Printf("Collecting feeds every %s\n", timeBetweenRequests)
+
+	ticker := time.NewTicker(timeBetweenRequests)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 }
 
 func handlerAddFeed(s *state, cmd command, user database.User) error {
